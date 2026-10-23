@@ -1,0 +1,109 @@
+services:
+  # ─── PRIMARY (writes: bookings, seat updates) ───
+  postgres:
+    image: postgres:17
+    container_name: ticketflow-postgres
+    environment:
+      POSTGRES_USER: ticketflow
+      POSTGRES_PASSWORD: ticketflow
+      POSTGRES_DB: ticketflow
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby=on
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/primary-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketflow -d ticketflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── READ REPLICA (reads: event list, seat map) ───
+  postgres-replica:
+    image: postgres:17
+    container_name: ticketflow-postgres-replica
+    user: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ticketflow
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgreplica:/var/lib/postgresql/data
+    entrypoint: >
+      bash -c "
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        echo '[replica] taking base backup from primary...';
+        rm -rf /var/lib/postgresql/data/*;
+        until pg_basebackup -h postgres -p 5432 -U ticketflow -D /var/lib/postgresql/data -Fp -Xs -R; do
+          echo '[replica] primary not ready, retrying in 3s...';
+          sleep 3;
+        done;
+        chmod 0700 /var/lib/postgresql/data;
+        echo '[replica] base backup complete';
+      fi;
+      echo '[replica] starting in standby mode';
+      exec postgres
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketflow -d ticketflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # ─── KAFKA (async events) ───
+  kafka:
+    image: apache/kafka:3.9.2
+    container_name: ticketflow-kafka
+    hostname: kafka
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafkadata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # ─── REDIS (seat-map cache + virtual queue) ───
+  redis:
+    image: redis:7-alpine
+    container_name: ticketflow-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  pgreplica:
+  kafkadata:

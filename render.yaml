@@ -1,0 +1,34 @@
+# render.yaml — Render Blueprint
+# Creates the web service and its database in one step.
+# Dashboard -> New -> Blueprint -> pick this repo.
+
+services:
+  - type: web
+    name: ticketflow
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    # Migrations are tracked and idempotent, so running them on every boot
+    # is safe and keeps the schema in step with the deployed code.
+    startCommand: npm run migrate && npm start
+    healthCheckPath: /health
+    envVars:
+      # Set DATABASE_URL manually in the Render dashboard — points at Neon,
+      # whose free tier is permanent (Render's free Postgres expires in 30 days).
+      - key: DATABASE_URL
+        sync: false
+      - key: PGSSL
+        value: "true"
+      # No Kafka broker on the free tier — bookings work, async events are skipped.
+      - key: KAFKA_ENABLED
+        value: "false"
+      # No replica on the free tier — reads fall back to the primary.
+      # No Redis by default — cache and queue fall back to in-process.
+      - key: NODE_ENV
+        value: production
+      - key: HOLD_MINUTES
+        value: "5"
+      - key: QUEUE_ENABLED
+        value: "false"
+      - key: PG_POOL_MAX
+        value: "8"

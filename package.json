@@ -1,0 +1,27 @@
+{
+  "name": "ticketflow",
+  "version": "2.0.0",
+  "description": "High-concurrency ticket booking system with pessimistic & optimistic locking, Kafka async processing, and idempotent consumers",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "worker": "node workers/index.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/db/seed.js",
+    "test:load": "node loadtest/stress.js",
+    "test:quick": "node loadtest/quick.js",
+    "test:deadlock": "node loadtest/deadlock.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "express": "^5.1.0",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.16.0",
+    "pino": "^9.5.0",
+    "redis": "^6.1.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.0.0"
+  }
+}
