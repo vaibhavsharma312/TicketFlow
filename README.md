@@ -586,4 +586,4 @@ Being explicit about what this doesn't do:
 
 ---
 
-Built by **Tushar Saini** · M.Tech, IIIT Allahabad
+Built by **Vaibhav Sharma** · IIIT ALLAHABAD
